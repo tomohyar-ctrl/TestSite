@@ -56,13 +56,12 @@
             font-size: 0.85rem;
             color: #bf4800;
         }
-        /* スキャン開始ボタンのスタイル */
         .start-btn {
             background-color: #0071e3;
             color: white;
             border: none;
-            padding: 12px 24px;
-            font-size: 1rem;
+            padding: 14px 28px;
+            font-size: 1.1rem;
             font-weight: bold;
             border-radius: 8px;
             cursor: pointer;
@@ -78,7 +77,7 @@
 
     <h1>EAN バーコードリーダー</h1>
     
-    <!-- 追加：スキャン開始ボタン -->
+    <!-- スキャン開始ボタン -->
     <button id="start-button" class="start-btn">カメラを起動する</button>
 
     <!-- カメラ映像が表示されるエリア -->
@@ -88,7 +87,7 @@
     <div id="result-container">
         <div class="result-label">読み取り結果 (EAN / JAN)</div>
         <div id="result" class="result-value">---</div>
-        <div id="status" class="status">「カメラを起動する」ボタンを押してください</div>
+        <div id="status" class="status">上のボタンを押してスキャンを開始してください</div>
     </div>
 
     <script>
@@ -118,6 +117,7 @@
                 }
             };
 
+            // 設定をよりシンプルに変更（iPhoneのフリーズ対策）
             const config = { 
                 fps: 10, 
                 qrbox: (width, height) => {
@@ -151,29 +151,39 @@
 
             const onScanFailure = (error) => {};
 
-            // ボタンが押されたら初めてカメラを要求する（iOS対策）
-            startBtn.addEventListener("click", () => {
-                startBtn.style.display = "none"; // ボタンを非表示に
-                statusElem.innerText = "カメラの許可をお待ちしています...";
-                
-                html5QrcodeScanner = new Html5Qrcode("reader");
-                
-                // iOSの特定端末で背面カメラの認識エラーが起きるのを防ぐため、より柔軟なカメラ要求にする
-                html5QrcodeScanner.start(
-                    { facingMode: "environment" }, 
-                    config, 
-                    onScanSuccess, 
-                    onScanFailure
-                )
-                .then(() => {
+            startBtn.addEventListener("click", async () => {
+                statusElem.innerText = "カメラをリクエスト中...";
+                startBtn.style.display = "none";
+
+                try {
+                    // 【超重要】iPhoneに強制的に「標準のカメラ許可ポップアップ」を出させる命令
+                    // これを先に実行することで、ブラウザ側のカメラブロックを完全に突破します
+                    await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+
+                    // 許可が取れたら、スキャナーを起動
+                    html5QrcodeScanner = new Html5Qrcode("reader");
+                    
+                    // iPhoneでエラーを起こさない最も安全な記述（videoConstraints内に配置）
+                    await html5QrcodeScanner.start(
+                        {}, // 空にするのがiPhoneでフリーズさせないコツ
+                        {
+                            ...config,
+                            videoConstraints: {
+                                facingMode: "environment"
+                            }
+                        }, 
+                        onScanSuccess, 
+                        onScanFailure
+                    );
+
                     statusElem.innerText = "スキャン中...";
                     statusElem.style.color = "#86868b";
-                })
-                .catch((err) => {
-                    statusElem.innerText = "カメラの起動に失敗しました。Safariの設定でカメラ許可を確認してください。";
-                    startBtn.style.display = "block"; // 失敗したらボタンを再表示
-                    console.error(err);
-                });
+
+                } catch (err) {
+                    statusElem.innerText = "カメラの起動に失敗しました。Safariのアクセス拒否をリセットしてください。";
+                    startBtn.style.display = "block";
+                    console.error("Camera Error:", err);
+                }
             });
         });
     </script>
