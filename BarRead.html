@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EAN バーコードリーダー</title>
     <!-- Html5-Qrcode ライブラリの読み込み -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cloudflare.com"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -76,14 +76,36 @@
         document.addEventListener("DOMContentLoaded", () => {
             const statusElem = document.getElementById("status");
             const resultElem = document.getElementById("result");
+            let lastScannedText = ""; // 直前に読み取った値を保存
+            let isCooldown = false;    // 連続通知を防ぐフラグ
+
+            // 「ピッ」という音を鳴らす関数（Web Audio API）
+            const playBeepSound = () => {
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    const audioCtx = new AudioContext();
+                    const oscillator = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(2000, audioCtx.currentTime); // 2000Hzの高い音
+                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);        // 音量調節
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.08); // 0.08秒だけ鳴らす
+                } catch (e) {
+                    console.error("オーディオの再生に失敗しました:", e);
+                }
+            };
 
             // スキャナーの初期設定
-            // EAN_13 と EAN_8 のみを対象に指定して誤認識を減らす
             const html5QrcodeScanner = new Html5Qrcode("reader");
             const config = { 
                 fps: 10, 
                 qrbox: (width, height) => {
-                    // 横長の読み取り枠を設定（バーコードに合わせる）
                     return { width: Math.floor(width * 0.8), height: 150 };
                 },
                 formatsToSupport: [ 
@@ -94,23 +116,36 @@
 
             // 読み取り成功時のコールバック
             const onScanSuccess = (decodedText, decodedResult) => {
+                // 同じバーコードを連続で読んだときのチャタリング（連打）を防ぐ
+                if (isCooldown && decodedText === lastScannedText) {
+                    return; 
+                }
+
+                lastScannedText = decodedText;
+                isCooldown = true;
+
+                // 読み取り結果を表示
                 resultElem.innerText = decodedText;
                 statusElem.innerText = "読み取りに成功しました！";
                 statusElem.style.color = "#34c759"; // 緑色
                 
-                // 連続でピピピピ鳴るのを防ぐため、成功後に少し色を変えてキープ
+                // 「ピッ」と音を鳴らす
+                playBeepSound();
+                
+                // 2秒間は同じバーコードでの音・表示の連打をガードする
                 setTimeout(() => {
                     statusElem.innerText = "スキャン中...";
                     statusElem.style.color = "#86868b";
+                    isCooldown = false;
                 }, 2000);
             };
 
-            // 読み取り失敗時（フレーム内にバーコードが見つからない時も呼ばれる）
+            // 読み取り失敗時
             const onScanFailure = (error) => {
-                // コンソールが埋まるのを防ぐため通常は何も書かない
+                // 通常は何も書かない
             };
 
-            // 背面カメラ（environment）を優先して起動
+            // 背面カメラを優先して起動
             html5QrcodeScanner.start(
                 { facingMode: "environment" }, 
                 config, 
