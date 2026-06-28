@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EAN バーコードリーダー</title>
-    <!-- Html5-Qrcode ライブラリの読み込み（ここを正しいURLに修正しました） -->
+    <!-- Html5-Qrcode ライブラリの読み込み -->
     <script src="https://cloudflare.com"></script>
     <style>
         body {
@@ -56,12 +56,31 @@
             font-size: 0.85rem;
             color: #bf4800;
         }
+        /* スキャン開始ボタンのスタイル */
+        .start-btn {
+            background-color: #0071e3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,113,227,0.3);
+        }
+        .start-btn:active {
+            background-color: #005bb5;
+        }
     </style>
 </head>
 <body>
 
     <h1>EAN バーコードリーダー</h1>
     
+    <!-- 追加：スキャン開始ボタン -->
+    <button id="start-button" class="start-btn">カメラを起動する</button>
+
     <!-- カメラ映像が表示されるエリア -->
     <div id="reader"></div>
 
@@ -69,40 +88,36 @@
     <div id="result-container">
         <div class="result-label">読み取り結果 (EAN / JAN)</div>
         <div id="result" class="result-value">---</div>
-        <div id="status" class="status">カメラの許可をお待ちしています...</div>
+        <div id="status" class="status">「カメラを起動する」ボタンを押してください</div>
     </div>
 
     <script>
         document.addEventListener("DOMContentLoaded", () => {
             const statusElem = document.getElementById("status");
             const resultElem = document.getElementById("result");
-            let lastScannedText = ""; // 直前に読み取った値を保存
-            let isCooldown = false;    // 連続通知を防ぐフラグ
+            const startBtn = document.getElementById("start-button");
+            let html5QrcodeScanner = null;
+            let lastScannedText = ""; 
+            let isCooldown = false;    
 
-            // 「ピッ」という音を鳴らす関数（Web Audio API）
             const playBeepSound = () => {
                 try {
                     const AudioContext = window.AudioContext || window.webkitAudioContext;
                     const audioCtx = new AudioContext();
                     const oscillator = audioCtx.createOscillator();
                     const gainNode = audioCtx.createGain();
-
                     oscillator.type = 'sine';
-                    oscillator.frequency.setValueAtTime(2000, audioCtx.currentTime); // 2000Hzの高い音
-                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);        // 音量調節
-
+                    oscillator.frequency.setValueAtTime(2000, audioCtx.currentTime); 
+                    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);        
                     oscillator.connect(gainNode);
                     gainNode.connect(audioCtx.destination);
-
                     oscillator.start();
-                    oscillator.stop(audioCtx.currentTime + 0.08); // 0.08秒だけ鳴らす
+                    oscillator.stop(audioCtx.currentTime + 0.08); 
                 } catch (e) {
                     console.error("オーディオの再生に失敗しました:", e);
                 }
             };
 
-            // スキャナーの初期設定
-            const html5QrcodeScanner = new Html5Qrcode("reader");
             const config = { 
                 fps: 10, 
                 qrbox: (width, height) => {
@@ -114,25 +129,19 @@
                 ]
             };
 
-            // 読み取り成功時のコールバック
             const onScanSuccess = (decodedText, decodedResult) => {
-                // 同じバーコードを連続で読んだときのチャタリング（連打）を防ぐ
                 if (isCooldown && decodedText === lastScannedText) {
                     return; 
                 }
-
                 lastScannedText = decodedText;
                 isCooldown = true;
 
-                // 読み取り結果を表示
                 resultElem.innerText = decodedText;
                 statusElem.innerText = "読み取りに成功しました！";
-                statusElem.style.color = "#34c759"; // 緑色
+                statusElem.style.color = "#34c759"; 
                 
-                // 「ピッ」と音を鳴らす
                 playBeepSound();
                 
-                // 2秒間は同じバーコードでの音・表示の連打をガードする
                 setTimeout(() => {
                     statusElem.innerText = "スキャン中...";
                     statusElem.style.color = "#86868b";
@@ -140,25 +149,31 @@
                 }, 2000);
             };
 
-            // 読み取り失敗時
-            const onScanFailure = (error) => {
-                // 通常は何も書かない
-            };
+            const onScanFailure = (error) => {};
 
-            // 背面カメラを優先して起動
-            html5QrcodeScanner.start(
-                { facingMode: "environment" }, 
-                config, 
-                onScanSuccess, 
-                onScanFailure
-            )
-            .then(() => {
-                statusElem.innerText = "スキャン中...";
-                statusElem.style.color = "#86868b";
-            })
-            .catch((err) => {
-                statusElem.innerText = "カメラの起動に失敗しました。HTTPS環境か、カメラの許可を確認してください。";
-                console.error(err);
+            // ボタンが押されたら初めてカメラを要求する（iOS対策）
+            startBtn.addEventListener("click", () => {
+                startBtn.style.display = "none"; // ボタンを非表示に
+                statusElem.innerText = "カメラの許可をお待ちしています...";
+                
+                html5QrcodeScanner = new Html5Qrcode("reader");
+                
+                // iOSの特定端末で背面カメラの認識エラーが起きるのを防ぐため、より柔軟なカメラ要求にする
+                html5QrcodeScanner.start(
+                    { facingMode: "environment" }, 
+                    config, 
+                    onScanSuccess, 
+                    onScanFailure
+                )
+                .then(() => {
+                    statusElem.innerText = "スキャン中...";
+                    statusElem.style.color = "#86868b";
+                })
+                .catch((err) => {
+                    statusElem.innerText = "カメラの起動に失敗しました。Safariの設定でカメラ許可を確認してください。";
+                    startBtn.style.display = "block"; // 失敗したらボタンを再表示
+                    console.error(err);
+                });
             });
         });
     </script>
